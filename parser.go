@@ -1,22 +1,26 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/xjbt/ts"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
-	"fmt"
-	"encoding/json"
+	"strings"
 )
 
+var Root string
+
 type Logger struct {
-	Pid int
-	Root string
+	Pid                   int
+	Root                  string
 	AdaptFieldPrivDataLog *os.File
 }
 
 type AdaptOut struct {
-	Pos int64
+	Pos     int64
 	Content ts.AdaptFieldPrivData
 }
 
@@ -51,6 +55,8 @@ func (logger *Logger) LogAdaptFieldPrivData(pkt *ts.TsPkt) {
 func parse(fname string, outdir string, psiOnly bool) {
 	var pkts chan *ts.TsPkt
 
+	Root = outdir
+
 	// PCR PID -> PCR values
 	var progPcrList = make(map[int][]ts.PcrInfo)
 
@@ -58,10 +64,11 @@ func parse(fname string, outdir string, psiOnly bool) {
 	psiParser := ts.NewPsiParser()
 	for pkt := range pkts {
 		if ok := psiParser.Parse(pkt); ok {
-			psiParser.Report(outdir)
 			break
 		}
 	}
+	psiParser.Finish()
+	psiParser.Report(outdir)
 
 	if psiOnly {
 		return
@@ -78,7 +85,7 @@ func parse(fname string, outdir string, psiOnly bool) {
 	records := make(map[int]ts.Record)
 	loggers := make(map[int]*Logger)
 	for pid, s := range streams {
-		records[pid] = ts.CreateRecord(pid, ts.GetStreamType(s))
+		records[pid] = ts.CreateRecord(pid, ts.GetStreamType(s), outdir)
 		loggers[pid] = newLogger(pid, outdir)
 	}
 
@@ -114,6 +121,8 @@ func parse(fname string, outdir string, psiOnly bool) {
 		record.Flush()
 		record.Report(outdir)
 	}
+
+	verify(psiParser.Info)
 }
 
 func extract(fname string, outdir string, pid int) {
@@ -128,8 +137,91 @@ func extract(fname string, outdir string, pid int) {
 	defer f.Close()
 
 	for pkt := range pkts {
-	    if pkt.Pid == pid {
-	        f.Write(pkt.Data)
-	    }
+		if pkt.Pid == pid {
+			f.Write(pkt.Data)
+		}
+	}
+}
+
+func verify(psiInfo ts.Info) {
+	result := map[string]interface{}{}
+	for _, prog := range psiInfo.Programs {
+		result["keyframe-alignment"] = verifyKeyframeAlignment(prog)
+	}
+	logJson("verified", result)
+}
+
+func verifyKeyframeAlignment(prog ts.Program) map[string]interface{} {
+	sctePids, videoPid := []string{}, ""
+	for pid, strm := range prog.Streams {
+		switch strm.StreamType {
+		case "SCTE-35":
+			sctePids = append(sctePids, pid)
+		case "MPEG-2 Video", "MPEG-4 Video", "MPEG-4 AVC Video":
+			videoPid = pid
+		}
+	}
+
+	result := map[string]interface{}{}
+	for _, sctePid := range sctePids {
+		pair := sctePid + ":" + videoPid
+		result[pair] = verifySpliceWithKeyframe(sctePid, videoPid)
+	}
+	return result
+}
+
+func verifySpliceWithKeyframe(sctePid, videoPid string) map[string]bool {
+	splice := map[string]bool{}
+	iframe := map[string]bool{}
+
+	parseCsv(sctePid, func(fields []string) {
+		if len(fields) > 3 {
+			pts, _ := strconv.ParseInt(fields[3], 10, 64)
+			adj, _ := strconv.ParseInt(fields[4], 10, 64)
+			key := strconv.FormatInt(pts+adj, 10)
+			splice[key] = false
+		}
+	})
+
+	parseCsv(videoPid+"-iframe", func(fields []string) {
+		if len(fields) > 1 {
+			iframe[fields[1]] = false
+		}
+	})
+
+	for pts, _ := range splice {
+		if _, ok := iframe[pts]; ok {
+			splice[pts] = true
+		}
+	}
+
+	return splice
+}
+
+func parseCsv(filename string, handle func([]string)) {
+	content, err := ioutil.ReadFile(filepath.Join(Root, filename+".csv"))
+	check(err)
+
+	lines := strings.Split(string(content), "\n")
+	lines = lines[1:]
+	for _, line := range lines {
+		fields := strings.Split(line, ", ")
+		handle(fields)
+	}
+}
+
+func logJson(filename string, v interface{}) {
+	w, err := os.Create(filepath.Join(Root, filename+".json"))
+	check(err)
+	defer w.Close()
+
+	b, err := json.MarshalIndent(v, "", "  ")
+	check(err)
+	fmt.Fprintln(w, string(b))
+}
+
+func check(err error) {
+	if err != nil {
+		panic(err)
 	}
 }

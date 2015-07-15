@@ -20,8 +20,8 @@ func main() {
 			Usage: "output directory",
 		},
 		cli.IntFlag{
-		    Name:  "extract",
-		    Usage: "specify a stream pid to extract",
+			Name:  "extract",
+			Usage: "specify a stream pid to extract",
 		},
 	}
 	app.Action = func(c *cli.Context) {
@@ -40,7 +40,7 @@ func main() {
 		parse(inputTsFile, outdir, psiOnly)
 		pidToExtract := c.Int("extract")
 		if pidToExtract != 0 {
-		    extract(inputTsFile, outdir, pidToExtract)
+			extract(inputTsFile, outdir, pidToExtract)
 		}
 	}
 	app.Run(os.Args)
