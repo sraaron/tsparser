@@ -100,12 +100,12 @@ func extract(fname string, outdir string, pid int) {
 func verify(psiInfo ts.Info) {
 	result := map[string]interface{}{}
 	for _, prog := range psiInfo.Programs {
-		result["keyframe-alignment"] = verifyKeyframeAlignment(prog)
+		result["splice-frame-accuracy"] = verifyKeyframeAlignment(prog)
 	}
 	logJson("verified", result)
 }
 
-func verifyKeyframeAlignment(prog ts.Program) map[string]interface{} {
+func verifySpliceFrameAccuracy(prog ts.Program) map[string]interface{} {
 	sctePids, videoPid := []string{}, ""
 	for pid, strm := range prog.Streams {
 		switch strm.StreamType {
