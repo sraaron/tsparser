@@ -100,7 +100,7 @@ func extract(fname string, outdir string, pid int) {
 func verify(psiInfo ts.Info) {
 	result := map[string]interface{}{}
 	for _, prog := range psiInfo.Programs {
-		result["splice-frame-accuracy"] = verifyKeyframeAlignment(prog)
+		result["splice-frame-accuracy"] = verifySpliceFrameAccuracy(prog)
 	}
 	logJson("verified", result)
 }
