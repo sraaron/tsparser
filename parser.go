@@ -20,6 +20,7 @@ func parse(fname string, outdir string, psiOnly bool) {
 
 	// PCR PID -> PCR values
 	var progPcrList = make(map[int][]ts.PcrInfo)
+	var extraPcrList = make(map[int][]ts.PcrInfo)
 
 	pkts = ts.ParseFile(fname)
 	psiParser := ts.NewPsiParser()
@@ -59,6 +60,14 @@ func parse(fname string, outdir string, psiOnly bool) {
 				for _, pid := range pids {
 					records[pid].NotifyTime(pcr, pkt.Pos)
 				}
+			} else {
+				// extra PCR
+				if _, ok := extraPcrList[pkt.Pid]; !ok {
+					extraPcrList[pkt.Pid] = make([]ts.PcrInfo, 0)
+				}
+				extraPcrList[pkt.Pid] = append(
+					extraPcrList[pkt.Pid],
+					ts.PcrInfo{pkt.Pos, pcr})
 			}
 		}
 
@@ -68,7 +77,11 @@ func parse(fname string, outdir string, psiOnly bool) {
 	}
 
 	for pcrPid, pcrList := range progPcrList {
-		ts.CheckPcrInterval(outdir, pcrPid, pcrList)
+		ts.CheckPcrInterval(outdir, "", pcrPid, pcrList)
+	}
+
+	for pcrPid, pcrList := range extraPcrList {
+		ts.CheckPcrInterval(outdir, "extra", pcrPid, pcrList)
 	}
 
 	for _, record := range records {
